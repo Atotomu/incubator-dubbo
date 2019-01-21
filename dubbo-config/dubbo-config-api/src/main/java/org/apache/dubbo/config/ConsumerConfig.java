@@ -16,8 +16,10 @@
  */
 package org.apache.dubbo.config;
 
+import org.apache.dubbo.common.utils.StringUtils;
+
 /**
- * ConsumerConfig
+ * The service consumer default confuguration
  *
  * @export
  */
@@ -25,18 +27,42 @@ public class ConsumerConfig extends AbstractReferenceConfig {
 
     private static final long serialVersionUID = 2827274711143680600L;
 
-    // is default or not
+    /**
+     * Whether to use the default protocol
+     */
     private Boolean isDefault;
 
-    // networking framework client uses: netty, mina, etc.
+    /**
+     * Networking framework client uses: netty, mina, etc.
+     */
     private String client;
+
+    /**
+     * Consumer thread pool type: cached, fixed, limit, eager
+     */
+    private String threadpool;
+
+    /**
+     * Consumer threadpool core thread size
+     */
+    private Integer corethreads;
+
+    /**
+     * Consumer threadpool thread size
+     */
+    private Integer threads;
+
+    /**
+     * Consumer threadpool queue size
+     */
+    private Integer queues;
 
     @Override
     public void setTimeout(Integer timeout) {
         super.setTimeout(timeout);
         String rmiTimeout = System.getProperty("sun.rmi.transport.tcp.responseTimeout");
         if (timeout != null && timeout > 0
-                && (rmiTimeout == null || rmiTimeout.length() == 0)) {
+                && (StringUtils.isEmpty(rmiTimeout))) {
             System.setProperty("sun.rmi.transport.tcp.responseTimeout", String.valueOf(timeout));
         }
     }
@@ -45,15 +71,51 @@ public class ConsumerConfig extends AbstractReferenceConfig {
         return isDefault;
     }
 
-    public void setDefault(Boolean isDefault) {
-        this.isDefault = isDefault;
-    }
-
     public String getClient() {
         return client;
     }
 
     public void setClient(String client) {
         this.client = client;
+    }
+
+    public String getThreadpool() {
+        return threadpool;
+    }
+
+    public void setThreadpool(String threadpool) {
+        this.threadpool = threadpool;
+    }
+
+    public Boolean getDefault() {
+        return isDefault;
+    }
+
+    public void setDefault(Boolean isDefault) {
+        this.isDefault = isDefault;
+    }
+
+    public Integer getCorethreads() {
+        return corethreads;
+    }
+
+    public void setCorethreads(Integer corethreads) {
+        this.corethreads = corethreads;
+    }
+
+    public Integer getThreads() {
+        return threads;
+    }
+
+    public void setThreads(Integer threads) {
+        this.threads = threads;
+    }
+
+    public Integer getQueues() {
+        return queues;
+    }
+
+    public void setQueues(Integer queues) {
+        this.queues = queues;
     }
 }

@@ -19,6 +19,7 @@ package org.apache.dubbo.common;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.ClassHelper;
+import org.apache.dubbo.common.utils.StringUtils;
 
 import java.net.URL;
 import java.security.CodeSource;
@@ -34,16 +35,16 @@ import java.util.Set;
 public final class Version {
     private static final Logger logger = LoggerFactory.getLogger(Version.class);
 
-    // Dubbo RPC protocol version
+    // Dubbo RPC protocol version, for compatibility, it must not be between 2.0.10 ~ 2.6.2
     public static final String DEFAULT_DUBBO_PROTOCOL_VERSION = "2.0.2";
     // Dubbo implementation version, usually is jar version.
     private static final String VERSION = getVersion(Version.class, "");
 
     /**
      * For protocol compatibility purpose.
-     * Because {@link #isSupportResponseAttatchment} is checked for every call, int compare expect to has higher performance than string.
+     * Because {@link #isSupportResponseAttachment} is checked for every call, int compare expect to has higher performance than string.
      */
-    private static final int LOWEST_VERSION_FOR_RESPONSE_ATTATCHMENT = 202; // 2.0.2
+    private static final int LOWEST_VERSION_FOR_RESPONSE_ATTACHMENT = 20002; // 2.0.2
     private static final Map<String, Integer> VERSION2INT = new HashMap<String, Integer>();
 
     static {
@@ -62,11 +63,17 @@ public final class Version {
         return VERSION;
     }
 
-    public static boolean isSupportResponseAttatchment(String version) {
-        if (version == null || version.length() == 0) {
+    public static boolean isSupportResponseAttachment(String version) {
+        if (StringUtils.isEmpty(version)) {
             return false;
         }
-        return getIntVersion(version) >= LOWEST_VERSION_FOR_RESPONSE_ATTATCHMENT;
+        // for previous dubbo version(2.0.10/020010~2.6.2/020602), this version is the jar's version, so they need to be ignore
+        int iVersion = getIntVersion(version);
+        if (iVersion >= 20010 && iVersion <= 20602) {
+            return false;
+        }
+
+        return iVersion >= LOWEST_VERSION_FOR_RESPONSE_ATTACHMENT;
     }
 
     public static int getIntVersion(String version) {
@@ -82,10 +89,28 @@ public final class Version {
         int v = 0;
         String[] vArr = version.split("\\.");
         int len = vArr.length;
-        for (int i = 1; i <= len; i++) {
-            v += Integer.parseInt(vArr[len - i]) * Math.pow(10, i - 1);
+        for (int i = 0; i < len; i++) {
+            v += Integer.parseInt(getDigital(vArr[i])) * Math.pow(10, (len - i - 1) * 2);
         }
         return v;
+    }
+
+    private static String getDigital(String v) {
+        int index = 0;
+        for (int i = 0; i < v.length(); i++) {
+            char c = v.charAt(i);
+            if (Character.isDigit(c)) {
+                if (i == v.length() - 1) {
+                    index = i + 1;
+                } else {
+                    index = i;
+                }
+            } else {
+                index = i;
+                break;
+            }
+        }
+        return v.substring(0, index);
     }
 
     private static boolean hasResource(String path) {
@@ -100,10 +125,10 @@ public final class Version {
         try {
             // find version info from MANIFEST.MF first
             String version = cls.getPackage().getImplementationVersion();
-            if (version == null || version.length() == 0) {
+            if (StringUtils.isEmpty(version)) {
                 version = cls.getPackage().getSpecificationVersion();
             }
-            if (version == null || version.length() == 0) {
+            if (StringUtils.isEmpty(version)) {
                 // guess version fro jar file name if nothing's found from MANIFEST.MF
                 CodeSource codeSource = cls.getProtectionDomain().getCodeSource();
                 if (codeSource == null) {
@@ -133,7 +158,7 @@ public final class Version {
                 }
             }
             // return default version if no version info is found
-            return version == null || version.length() == 0 ? defaultVersion : version;
+            return StringUtils.isEmpty(version) ? defaultVersion : version;
         } catch (Throwable e) {
             // return default version when any exception is thrown
             logger.error("return default version, ignore exception " + e.getMessage(), e);

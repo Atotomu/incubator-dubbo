@@ -19,6 +19,7 @@ package org.apache.dubbo.rpc.protocol.injvm;
 import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.extension.ExtensionLoader;
+import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.rpc.Exporter;
 import org.apache.dubbo.rpc.Invoker;
@@ -56,7 +57,7 @@ public class InjvmProtocol extends AbstractProtocol implements Protocol {
         if (!key.getServiceKey().contains("*")) {
             result = map.get(key.getServiceKey());
         } else {
-            if (map != null && !map.isEmpty()) {
+            if (CollectionUtils.isNotEmptyMap(map)) {
                 for (Exporter<?> exporter : map.values()) {
                     if (UrlUtils.isServiceKeyMatch(key, exporter.getInvoker().getUrl())) {
                         result = exporter;
@@ -97,7 +98,7 @@ public class InjvmProtocol extends AbstractProtocol implements Protocol {
         // Since injvm protocol is configured explicitly, we don't need to set any extra flag, use normal refer process.
         if (Constants.LOCAL_PROTOCOL.toString().equals(url.getProtocol())) {
             isJvmRefer = false;
-        } else if (Constants.SCOPE_LOCAL.equals(scope) || (url.getParameter("injvm", false))) {
+        } else if (Constants.SCOPE_LOCAL.equals(scope) || (url.getParameter(Constants.LOCAL_PROTOCOL, false))) {
             // if it's declared as local reference
             // 'scope=local' is equivalent to 'injvm=true', injvm will be deprecated in the future release
             isJvmRefer = true;

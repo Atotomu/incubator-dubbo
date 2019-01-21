@@ -19,8 +19,10 @@ package org.apache.dubbo.config.spring;
 import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
+import org.apache.dubbo.common.utils.ArrayUtils;
 import org.apache.dubbo.common.utils.ConcurrentHashSet;
 import org.apache.dubbo.common.utils.ReflectUtils;
+import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.AbstractConfig;
 import org.apache.dubbo.config.ApplicationConfig;
 import org.apache.dubbo.config.ConsumerConfig;
@@ -28,7 +30,6 @@ import org.apache.dubbo.config.ModuleConfig;
 import org.apache.dubbo.config.MonitorConfig;
 import org.apache.dubbo.config.ProtocolConfig;
 import org.apache.dubbo.config.ProviderConfig;
-import org.apache.dubbo.config.ReferenceConfig;
 import org.apache.dubbo.config.RegistryConfig;
 import org.apache.dubbo.config.ServiceConfig;
 import org.apache.dubbo.config.annotation.Reference;
@@ -75,8 +76,8 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
 
     public void setPackage(String annotationPackage) {
         this.annotationPackage = annotationPackage;
-        this.annotationPackages = (annotationPackage == null || annotationPackage.length() == 0) ? null
-            : Constants.COMMA_SPLIT_PATTERN.split(annotationPackage);
+        this.annotationPackages = (StringUtils.isEmpty(annotationPackage)) ? null
+                : Constants.COMMA_SPLIT_PATTERN.split(annotationPackage);
     }
 
     @Override
@@ -86,15 +87,15 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
 
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory)
-        throws BeansException {
-        if (annotationPackage == null || annotationPackage.length() == 0) {
+            throws BeansException {
+        if (StringUtils.isEmpty(annotationPackage)) {
             return;
         }
         if (beanFactory instanceof BeanDefinitionRegistry) {
             try {
                 // init scanner
                 Class<?> scannerClass = ReflectUtils.forName("org.springframework.context.annotation.ClassPathBeanDefinitionScanner");
-                Object scanner = scannerClass.getConstructor(new Class<?>[]{BeanDefinitionRegistry.class, boolean.class}).newInstance(new Object[]{(BeanDefinitionRegistry) beanFactory, true});
+                Object scanner = scannerClass.getConstructor(new Class<?>[]{BeanDefinitionRegistry.class, boolean.class}).newInstance((BeanDefinitionRegistry) beanFactory, true);
                 // add filter
                 Class<?> filterClass = ReflectUtils.forName("org.springframework.core.type.filter.AnnotationTypeFilter");
                 Object filter = filterClass.getConstructor(Class.class).newInstance(Service.class);
@@ -102,7 +103,7 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
                 addIncludeFilter.invoke(scanner, filter);
                 // scan packages
                 String[] packages = Constants.COMMA_SPLIT_PATTERN.split(annotationPackage);
-                Method scan = scannerClass.getMethod("scan", new Class<?>[]{String[].class});
+                Method scan = scannerClass.getMethod("scan", String[].class);
                 scan.invoke(scanner, new Object[]{packages});
             } catch (Throwable e) {
                 // spring 2.0
@@ -112,17 +113,16 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
 
     @Override
     public void destroy() {
-
-        //  This will only be called for singleton scope bean, and expected to be called by spring shutdown hook when BeanFactory/ApplicationContext destroys.
-        //  We will guarantee dubbo related resources being released with dubbo shutdown hook.
-
-        //  for (ServiceConfig<?> serviceConfig : serviceConfigs) {
-        //      try {
-        //          serviceConfig.unexport();
-        //      } catch (Throwable e) {
-        //          logger.error(e.getMessage(), e);
-        //      }
-        //  }
+        // no need to destroy here
+        // see org.apache.dubbo.config.spring.extension.SpringExtensionFactory.ShutdownHookListener
+        /*
+          for (ServiceConfig<?> serviceConfig : serviceConfigs) {
+              try {
+                  serviceConfig.unexport();
+              } catch (Throwable e) {
+                  logger.error(e.getMessage(), e);
+              }
+          }
 
         for (ReferenceConfig<?> referenceConfig : referenceConfigs.values()) {
             try {
@@ -131,11 +131,12 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
                 logger.error(e.getMessage(), e);
             }
         }
+        */
     }
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName)
-        throws BeansException {
+            throws BeansException {
         if (!isMatchPackage(bean)) {
             return bean;
         }
@@ -144,7 +145,7 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
             ServiceBean<Object> serviceConfig = new ServiceBean<Object>(service);
             serviceConfig.setRef(bean);
             if (void.class.equals(service.interfaceClass())
-                && "".equals(service.interfaceName())) {
+                    && "".equals(service.interfaceName())) {
                 if (bean.getClass().getInterfaces().length > 0) {
                     serviceConfig.setInterface(bean.getClass().getInterfaces()[0]);
                 } else {
@@ -174,9 +175,6 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
                 if (service.module().length() > 0) {
                     serviceConfig.setModule(applicationContext.getBean(service.module(), ModuleConfig.class));
                 }
-                if (service.provider().length() > 0) {
-                    serviceConfig.setProvider(applicationContext.getBean(service.provider(), ProviderConfig.class));
-                }
                 if (service.protocol().length > 0) {
                     List<ProtocolConfig> protocolConfigs = new ArrayList<ProtocolConfig>();
                     for (String protocolId : service.protocol()) {
@@ -185,6 +183,9 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
                         }
                     }
                     serviceConfig.setProtocols(protocolConfigs);
+                }
+                if (service.tag().length() > 0) {
+                    serviceConfig.setTag(service.tag());
                 }
                 try {
                     serviceConfig.afterPropertiesSet();
@@ -202,7 +203,7 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
 
     @Override
     public Object postProcessBeforeInitialization(Object bean, String beanName)
-        throws BeansException {
+            throws BeansException {
         if (!isMatchPackage(bean)) {
             return bean;
         }
@@ -210,9 +211,9 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
         for (Method method : methods) {
             String name = method.getName();
             if (name.length() > 3 && name.startsWith("set")
-                && method.getParameterTypes().length == 1
-                && Modifier.isPublic(method.getModifiers())
-                && !Modifier.isStatic(method.getModifiers())) {
+                    && method.getParameterTypes().length == 1
+                    && Modifier.isPublic(method.getModifiers())
+                    && !Modifier.isStatic(method.getModifiers())) {
                 try {
                     Reference reference = method.getAnnotation(Reference.class);
                     if (reference != null) {
@@ -240,7 +241,7 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
                     }
                 }
             } catch (Throwable e) {
-                logger.error("Failed to init remote service reference at filed " + field.getName() + " in class " + bean.getClass().getName() + ", cause: " + e.getMessage(), e);
+                logger.error("Failed to init remote service reference at field " + field.getName() + " in class " + bean.getClass().getName() + ", cause: " + e.getMessage(), e);
             }
         }
         return bean;
@@ -262,8 +263,8 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
         if (referenceConfig == null) {
             referenceConfig = new ReferenceBean<Object>(reference);
             if (void.class.equals(reference.interfaceClass())
-                && "".equals(reference.interfaceName())
-                && referenceClass.isInterface()) {
+                    && "".equals(reference.interfaceName())
+                    && referenceClass.isInterface()) {
                 referenceConfig.setInterface(referenceClass);
             }
             if (applicationContext != null) {
@@ -307,7 +308,7 @@ public class AnnotationBean extends AbstractConfig implements DisposableBean, Be
     }
 
     private boolean isMatchPackage(Object bean) {
-        if (annotationPackages == null || annotationPackages.length == 0) {
+        if (ArrayUtils.isEmpty(annotationPackages)) {
             return true;
         }
         String beanClassName = bean.getClass().getName();

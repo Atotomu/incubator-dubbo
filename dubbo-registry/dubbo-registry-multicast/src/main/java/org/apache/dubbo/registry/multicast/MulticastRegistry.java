@@ -24,8 +24,8 @@ import org.apache.dubbo.common.utils.ConcurrentHashSet;
 import org.apache.dubbo.common.utils.ExecutorUtil;
 import org.apache.dubbo.common.utils.NamedThreadFactory;
 import org.apache.dubbo.common.utils.NetUtils;
-import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.common.utils.UrlUtils;
+import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.registry.NotifyListener;
 import org.apache.dubbo.registry.support.FailbackRegistry;
 
@@ -58,11 +58,11 @@ public class MulticastRegistry extends FailbackRegistry {
 
     private static final int DEFAULT_MULTICAST_PORT = 1234;
 
-    private final InetAddress mutilcastAddress;
+    private final InetAddress multicastAddress;
 
-    private final MulticastSocket mutilcastSocket;
+    private final MulticastSocket multicastSocket;
 
-    private final int mutilcastPort;
+    private final int multicastPort;
 
     private final ConcurrentMap<URL, Set<URL>> received = new ConcurrentHashMap<URL, Set<URL>>();
 
@@ -79,23 +79,24 @@ public class MulticastRegistry extends FailbackRegistry {
         if (url.isAnyHost()) {
             throw new IllegalStateException("registry address == null");
         }
-        if (!isMulticastAddress(url.getHost())) {
-            throw new IllegalArgumentException("Invalid multicast address " + url.getHost() + ", scope: 224.0.0.0 - 239.255.255.255");
-        }
         try {
-            mutilcastAddress = InetAddress.getByName(url.getHost());
-            mutilcastPort = url.getPort() <= 0 ? DEFAULT_MULTICAST_PORT : url.getPort();
-            mutilcastSocket = new MulticastSocket(mutilcastPort);
-            mutilcastSocket.setLoopbackMode(false);
-            mutilcastSocket.joinGroup(mutilcastAddress);
+            multicastAddress = InetAddress.getByName(url.getHost());
+            if (!multicastAddress.isMulticastAddress()) {
+                throw new IllegalArgumentException("Invalid multicast address " + url.getHost() +
+                        ", ipv4 multicast address scope: 224.0.0.0 - 239.255.255.255.");
+            }
+            multicastPort = url.getPort() <= 0 ? DEFAULT_MULTICAST_PORT : url.getPort();
+            multicastSocket = new MulticastSocket(multicastPort);
+            multicastSocket.setLoopbackMode(false);
+            multicastSocket.joinGroup(multicastAddress);
             Thread thread = new Thread(new Runnable() {
                 @Override
                 public void run() {
                     byte[] buf = new byte[2048];
                     DatagramPacket recv = new DatagramPacket(buf, buf.length);
-                    while (!mutilcastSocket.isClosed()) {
+                    while (!multicastSocket.isClosed()) {
                         try {
-                            mutilcastSocket.receive(recv);
+                            multicastSocket.receive(recv);
                             String msg = new String(recv.getData()).trim();
                             int i = msg.indexOf('\n');
                             if (i > 0) {
@@ -104,7 +105,7 @@ public class MulticastRegistry extends FailbackRegistry {
                             MulticastRegistry.this.receive(msg, (InetSocketAddress) recv.getSocketAddress());
                             Arrays.fill(buf, (byte) 0);
                         } catch (Throwable e) {
-                            if (!mutilcastSocket.isClosed()) {
+                            if (!multicastSocket.isClosed()) {
                                 logger.error(e.getMessage(), e);
                             }
                         }
@@ -131,18 +132,6 @@ public class MulticastRegistry extends FailbackRegistry {
         } else {
             this.cleanFuture = null;
         }
-    }
-
-    private static boolean isMulticastAddress(String ip) {
-        int i = ip.indexOf('.');
-        if (i > 0) {
-            String prefix = ip.substring(0, i);
-            if (StringUtils.isInteger(prefix)) {
-                int p = Integer.parseInt(prefix);
-                return p >= 224 && p <= 239;
-            }
-        }
-        return false;
     }
 
     /**
@@ -216,7 +205,7 @@ public class MulticastRegistry extends FailbackRegistry {
         } else if (msg.startsWith(Constants.SUBSCRIBE)) {
             URL url = URL.valueOf(msg.substring(Constants.SUBSCRIBE.length()).trim());
             Set<URL> urls = getRegistered();
-            if (urls != null && !urls.isEmpty()) {
+            if (CollectionUtils.isNotEmpty(urls)) {
                 for (URL u : urls) {
                     if (UrlUtils.isMatch(url, u)) {
                         String host = remoteAddress != null && remoteAddress.getAddress() != null
@@ -225,7 +214,7 @@ public class MulticastRegistry extends FailbackRegistry {
                                 && !NetUtils.getLocalHost().equals(host)) { // Multiple processes in the same machine cannot be unicast with unicast or there will be only one process receiving information
                             unicast(Constants.REGISTER + " " + u.toFullString(), host);
                         } else {
-                            broadcast(Constants.REGISTER + " " + u.toFullString());
+                            multicast(Constants.REGISTER + " " + u.toFullString());
                         }
                     }
                 }
@@ -234,14 +223,14 @@ public class MulticastRegistry extends FailbackRegistry {
         }*/
     }
 
-    private void broadcast(String msg) {
+    private void multicast(String msg) {
         if (logger.isInfoEnabled()) {
-            logger.info("Send broadcast message: " + msg + " to " + mutilcastAddress + ":" + mutilcastPort);
+            logger.info("Send multicast message: " + msg + " to " + multicastAddress + ":" + multicastPort);
         }
         try {
             byte[] data = (msg + "\n").getBytes();
-            DatagramPacket hi = new DatagramPacket(data, data.length, mutilcastAddress, mutilcastPort);
-            mutilcastSocket.send(hi);
+            DatagramPacket hi = new DatagramPacket(data, data.length, multicastAddress, multicastPort);
+            multicastSocket.send(hi);
         } catch (Exception e) {
             throw new IllegalStateException(e.getMessage(), e);
         }
@@ -249,33 +238,33 @@ public class MulticastRegistry extends FailbackRegistry {
 
     private void unicast(String msg, String host) {
         if (logger.isInfoEnabled()) {
-            logger.info("Send unicast message: " + msg + " to " + host + ":" + mutilcastPort);
+            logger.info("Send unicast message: " + msg + " to " + host + ":" + multicastPort);
         }
         try {
             byte[] data = (msg + "\n").getBytes();
-            DatagramPacket hi = new DatagramPacket(data, data.length, InetAddress.getByName(host), mutilcastPort);
-            mutilcastSocket.send(hi);
+            DatagramPacket hi = new DatagramPacket(data, data.length, InetAddress.getByName(host), multicastPort);
+            multicastSocket.send(hi);
         } catch (Exception e) {
             throw new IllegalStateException(e.getMessage(), e);
         }
     }
 
     @Override
-    protected void doRegister(URL url) {
-        broadcast(Constants.REGISTER + " " + url.toFullString());
+    public void doRegister(URL url) {
+        multicast(Constants.REGISTER + " " + url.toFullString());
     }
 
     @Override
-    protected void doUnregister(URL url) {
-        broadcast(Constants.UNREGISTER + " " + url.toFullString());
+    public void doUnregister(URL url) {
+        multicast(Constants.UNREGISTER + " " + url.toFullString());
     }
 
     @Override
-    protected void doSubscribe(URL url, NotifyListener listener) {
+    public void doSubscribe(URL url, NotifyListener listener) {
         if (Constants.ANY_VALUE.equals(url.getServiceInterface())) {
             admin = true;
         }
-        broadcast(Constants.SUBSCRIBE + " " + url.toFullString());
+        multicast(Constants.SUBSCRIBE + " " + url.toFullString());
         synchronized (listener) {
             try {
                 listener.wait(url.getParameter(Constants.TIMEOUT_KEY, Constants.DEFAULT_TIMEOUT));
@@ -285,18 +274,18 @@ public class MulticastRegistry extends FailbackRegistry {
     }
 
     @Override
-    protected void doUnsubscribe(URL url, NotifyListener listener) {
+    public void doUnsubscribe(URL url, NotifyListener listener) {
         if (!Constants.ANY_VALUE.equals(url.getServiceInterface())
                 && url.getParameter(Constants.REGISTER_KEY, true)) {
             unregister(url);
         }
-        broadcast(Constants.UNSUBSCRIBE + " " + url.toFullString());
+        multicast(Constants.UNSUBSCRIBE + " " + url.toFullString());
     }
 
     @Override
     public boolean isAvailable() {
         try {
-            return mutilcastSocket != null;
+            return multicastSocket != null;
         } catch (Throwable t) {
             return false;
         }
@@ -309,15 +298,13 @@ public class MulticastRegistry extends FailbackRegistry {
     public void destroy() {
         super.destroy();
         try {
-            if (cleanFuture != null) {
-                cleanFuture.cancel(true);
-            }
+            ExecutorUtil.cancelScheduledFuture(cleanFuture);
         } catch (Throwable t) {
             logger.warn(t.getMessage(), t);
         }
         try {
-            mutilcastSocket.leaveGroup(mutilcastAddress);
-            mutilcastSocket.close();
+            multicastSocket.leaveGroup(multicastAddress);
+            multicastSocket.close();
         } catch (Throwable t) {
             logger.warn(t.getMessage(), t);
         }
@@ -353,8 +340,8 @@ public class MulticastRegistry extends FailbackRegistry {
                 if (urls != null) {
                     urls.remove(url);
                 }
-                if (urls == null || urls.isEmpty()){
-                    if (urls == null){
+                if (urls == null || urls.isEmpty()) {
+                    if (urls == null) {
                         urls = new ConcurrentHashSet<URL>();
                     }
                     URL empty = url.setProtocol(Constants.EMPTY_PROTOCOL);
@@ -375,7 +362,7 @@ public class MulticastRegistry extends FailbackRegistry {
 
     private List<URL> toList(Set<URL> urls) {
         List<URL> list = new ArrayList<URL>();
-        if (urls != null && !urls.isEmpty()) {
+        if (CollectionUtils.isNotEmpty(urls)) {
             for (URL url : urls) {
                 list.add(url);
             }
@@ -418,7 +405,7 @@ public class MulticastRegistry extends FailbackRegistry {
         }
         if (urls.isEmpty()) {
             List<URL> cacheUrls = getCacheUrls(url);
-            if (cacheUrls != null && !cacheUrls.isEmpty()) {
+            if (CollectionUtils.isNotEmpty(cacheUrls)) {
                 urls.addAll(cacheUrls);
             }
         }
@@ -439,8 +426,8 @@ public class MulticastRegistry extends FailbackRegistry {
         return urls;
     }
 
-    public MulticastSocket getMutilcastSocket() {
-        return mutilcastSocket;
+    public MulticastSocket getMulticastSocket() {
+        return multicastSocket;
     }
 
     public Map<URL, Set<URL>> getReceived() {

@@ -20,6 +20,7 @@ import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.extension.Activate;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
+import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.ConcurrentHashSet;
 import org.apache.dubbo.remoting.Channel;
 import org.apache.dubbo.rpc.Filter;
@@ -28,6 +29,7 @@ import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.Result;
 import org.apache.dubbo.rpc.RpcContext;
 import org.apache.dubbo.rpc.RpcException;
+
 import com.alibaba.fastjson.JSON;
 
 import java.util.ArrayList;
@@ -84,7 +86,7 @@ public class TraceFilter implements Filter {
                 key = invoker.getInterface().getName();
                 channels = tracers.get(key);
             }
-            if (channels != null && !channels.isEmpty()) {
+            if (CollectionUtils.isNotEmpty(channels)) {
                 for (Channel channel : new ArrayList<Channel>(channels)) {
                     if (channel.isConnected()) {
                         try {

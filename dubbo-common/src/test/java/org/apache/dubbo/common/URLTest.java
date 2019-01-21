@@ -18,7 +18,7 @@ package org.apache.dubbo.common;
 
 import org.apache.dubbo.common.utils.CollectionUtils;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.util.Arrays;
@@ -27,12 +27,12 @@ import java.util.Map;
 
 import static org.hamcrest.CoreMatchers.anyOf;
 import static org.hamcrest.CoreMatchers.equalTo;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class URLTest {
 
@@ -647,6 +647,34 @@ public class URLTest {
         assertEquals("hello@1234", url.getPassword());
         assertEquals("10.20.130.230", url.getHost());
         assertEquals(20880, url.getPort());
+        assertEquals("context/path", url.getPath());
+        assertEquals(2, url.getParameters().size());
+        assertEquals("1.0.0", url.getParameter("version"));
+        assertEquals("morgan", url.getParameter("application"));
+    }
+
+
+    @Test
+    public void testIpV6Address(){
+        // Test username or password contains "@"
+        URL url = URL.valueOf("ad@min111:haha@1234@2001:0db8:85a3:08d3:1319:8a2e:0370:7344:20880/context/path?version=1.0.0&application=morgan");
+        assertNull(url.getProtocol());
+        assertEquals("ad@min111", url.getUsername());
+        assertEquals("haha@1234", url.getPassword());
+        assertEquals("2001:0db8:85a3:08d3:1319:8a2e:0370:7344", url.getHost());
+        assertEquals(20880, url.getPort());
+        assertEquals("context/path", url.getPath());
+        assertEquals(2, url.getParameters().size());
+        assertEquals("1.0.0", url.getParameter("version"));
+        assertEquals("morgan", url.getParameter("application"));
+    }
+
+    @Test
+    public void testIpV6AddressWithScopeId(){
+        URL url = URL.valueOf("2001:0db8:85a3:08d3:1319:8a2e:0370:7344%5/context/path?version=1.0.0&application=morgan");
+        assertNull(url.getProtocol());
+        assertEquals("2001:0db8:85a3:08d3:1319:8a2e:0370:7344%5", url.getHost());
+        assertEquals(0, url.getPort());
         assertEquals("context/path", url.getPath());
         assertEquals(2, url.getParameters().size());
         assertEquals("1.0.0", url.getParameter("version"));
